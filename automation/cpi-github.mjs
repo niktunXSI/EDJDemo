@@ -98,6 +98,15 @@ async function cpi(method, path, body) {
     }
     fail(`Client Product Insights returned a non-JSON response (HTTP ${response.status}).`);
   }
+  if ((response.status === 401 || response.status === 403) && typeof data?.error === "string") {
+    fail(
+      `Cursor's sign-in gate in front of Client Product Insights refused the request (HTTP ${response.status}: ${data.error}). ` +
+        (data.error === "missing_permission"
+          ? "CURSOR_APP_TOKEN was recognised but is not allowed to open apps: a team admin must turn on API keys opening apps, and a team key must be given access to this app (or use the app owner's personal key)."
+          : "Check that CURSOR_APP_TOKEN is set to a Cursor API key that can open this app."),
+      { gate: data.error, status: response.status },
+    );
+  }
   return { status: response.status, data };
 }
 
