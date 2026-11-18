@@ -34,6 +34,23 @@ export const config = {
   get envWebhookSecret() {
     return process.env.WEBHOOK_SIGNING_SECRET?.trim() || "";
   },
+  /** Bearer token sent to external webhook destinations that require `Authorization: Bearer`. */
+  get envWebhookBearer() {
+    return process.env.WEBHOOK_BEARER_TOKEN?.trim() || "";
+  },
+  /** When set, forces automatic queueing of new submissions on or off. */
+  get envAutoQueue(): boolean | undefined {
+    const raw = process.env.AUTO_QUEUE_NEW_REQUESTS?.trim().toLowerCase();
+    if (!raw) return undefined;
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  },
+  /** Comma-separated emails of signed-in viewers allowed to administer integrations and reset demo data. */
+  get adminEmails(): string[] {
+    return (process.env.APP_ADMIN_EMAILS ?? "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+  },
   get webhookTimeoutMs() {
     return int("WEBHOOK_TIMEOUT_MS", 8000);
   },

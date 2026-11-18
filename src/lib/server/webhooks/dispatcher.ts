@@ -7,7 +7,8 @@ import { ApiError, conflict, notFound } from "../http";
 import { redact, sanitizeUrl } from "../redact";
 import { recordActivity, type ActorRef } from "../requests";
 import { getSettings, type IntegrationSettings } from "../settings";
-import { assertSafeDestination } from "./destination";
+import { assertSafeDestination, privateDestinationsAllowed } from "./destination";
+import { DeliveryTimeoutError, postWebhook } from "./http-client";
 import { MOCK_TARGET, receiveMockWebhook } from "./mock-receiver";
 import { ATTEMPT_HEADER, EVENT_ID_HEADER, EVENT_TYPE_HEADER, signatureHeaders } from "./signing";
 
@@ -159,27 +160,23 @@ async function send(row: DeliveryRow, settings: IntegrationSettings, attemptNumb
       durationMs: Date.now() - started,
     };
   }
+  if (settings.bearerToken) headers.authorization = `Bearer ${settings.bearerToken}`;
   try {
-    const response = await fetch(target, {
-      method: "POST",
-      headers,
-      body: rawBody,
-      redirect: "manual",
-      signal: AbortSignal.timeout(config.webhookTimeoutMs),
-      cache: "no-store",
+    const response = await postWebhook(target, headers, rawBody, {
+      timeoutMs: config.webhookTimeoutMs,
+      allowPrivate: privateDestinationsAllowed(),
     });
-    const text = await response.text().catch(() => "");
     const ok = response.status >= 200 && response.status < 300;
     return {
       outcome: ok ? "success" : "http_error",
       statusCode: response.status,
       error: ok ? null : `Receiver responded with HTTP ${response.status}${response.status >= 300 && response.status < 400 ? " (redirects are not followed)" : ""}.`,
-      responseExcerpt: text ? redact(text, 300) : null,
+      responseExcerpt: null,
       retryable: !ok && isRetryableStatus(response.status),
       durationMs: Date.now() - started,
     };
   } catch (error) {
-    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+    const timedOut = error instanceof DeliveryTimeoutError;
     const cause = error instanceof Error && error.cause instanceof Error ? `: ${error.cause.message}` : "";
     return {
       outcome: timedOut ? "timeout" : "network_error",

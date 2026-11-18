@@ -26,6 +26,7 @@ export function CredentialField({
   masked,
   managedBy,
   rotateWarning,
+  canAdmin,
 }: {
   which: "secret" | "apiKey";
   label: string;
@@ -33,6 +34,7 @@ export function CredentialField({
   masked: string | null;
   managedBy: string | null;
   rotateWarning: string;
+  canAdmin: boolean;
 }) {
   const router = useRouter();
   const [revealed, setRevealed] = useState<string | null>(null);
@@ -75,7 +77,11 @@ export function CredentialField({
         {managedBy && <span className="text-[11.5px] text-muted-foreground">Managed by {managedBy}</span>}
       </div>
       <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted-foreground">{description}</p>
-      {managedBy ? (
+      {!canAdmin && !managedBy ? (
+        <p className="mt-2 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 font-mono text-[12.5px] text-muted-foreground">
+          {masked ?? "Not configured"} <span className="font-sans">· administrators only</span>
+        </p>
+      ) : managedBy ? (
         <p className="mt-2 rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 font-mono text-[12.5px] text-muted-foreground">
           {masked ?? "Configured in the environment; not displayed."}
         </p>

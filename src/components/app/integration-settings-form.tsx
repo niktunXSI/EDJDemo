@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FlaskConical, Globe, Loader2, PlayCircle, Send } from "lucide-react";
+import { FlaskConical, Globe, Loader2, PlayCircle, Send, ShieldAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,7 +40,15 @@ function ToggleRow({
   );
 }
 
-export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { settings: PublicIntegrationSettings; mockReceiverUrl: string }) {
+export function IntegrationSettingsForm({
+  settings,
+  mockReceiverUrl,
+  canAdmin,
+}: {
+  settings: PublicIntegrationSettings;
+  mockReceiverUrl: string;
+  canAdmin: boolean;
+}) {
   const router = useRouter();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [destination, setDestination] = useState(settings.destination);
@@ -48,16 +56,24 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
   const [autoQueue, setAutoQueue] = useState(settings.autoQueue);
   const [includeClient, setIncludeClient] = useState(settings.includeClientIdentity);
   const [mockFailure, setMockFailure] = useState(settings.mockFailureMode);
+  const [bearer, setBearer] = useState("");
+  const [clearBearer, setClearBearer] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [dispatching, setDispatching] = useState(false);
 
   const urlManaged = settings.urlSource === "environment";
+  const bearerManaged = settings.bearerSource === "environment";
+  const destinationManaged = settings.destinationSource === "environment";
+  const autoQueueManaged = settings.autoQueueSource === "environment";
+  const locked = !canAdmin;
   const dirty =
     enabled !== settings.enabled ||
     destination !== settings.destination ||
     (!urlManaged && url !== settings.url) ||
+    bearer.trim() !== "" ||
+    clearBearer ||
     autoQueue !== settings.autoQueue ||
     includeClient !== settings.includeClientIdentity ||
     mockFailure !== settings.mockFailureMode;
@@ -68,14 +84,17 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
     try {
       const body: Record<string, unknown> = {
         enabled,
-        destination,
-        autoQueue,
         includeClientIdentity: includeClient,
         mockFailureMode: mockFailure,
       };
+      if (!destinationManaged) body.destination = destination;
+      if (!autoQueueManaged) body.autoQueue = autoQueue;
       if (!urlManaged) body.url = url.trim();
+      if (!bearerManaged && (bearer.trim() || clearBearer)) body.bearerToken = clearBearer ? "" : bearer.trim();
       await apiFetch("/api/integrations/settings", { method: "PATCH", body });
       toast.success("Integration settings saved");
+      setBearer("");
+      setClearBearer(false);
       router.refresh();
     } catch (error) {
       if (error instanceof ApiClientError && (error.code.includes("url") || error.fields.some((f) => f.path === "url"))) {
@@ -131,16 +150,27 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
 
   return (
     <div className="space-y-5">
+      {locked && (
+        <p className="flex gap-2 rounded-md border border-[#e5d3a4] bg-[#fbf5e6] px-3 py-2.5 text-[12.5px] leading-relaxed text-[#6a4c0f]">
+          <ShieldAlert className="mt-px size-4 shrink-0" />
+          Only administrators can change integration settings. Cursor team admins qualify automatically; the app owner can add emails to
+          the APP_ADMIN_EMAILS app secret. You can still send test events and process deliveries.
+        </p>
+      )}
+      <fieldset disabled={locked} className="space-y-5 disabled:opacity-70">
       <ToggleRow
         id="enabled"
         label="Webhook connection enabled"
         description="When disabled, nothing is sent. Queued requests remain discoverable through the Agent API."
         checked={enabled}
         onChange={setEnabled}
+        disabled={locked}
       />
 
-      <fieldset className="space-y-2 border-t border-border/70 pt-4">
-        <legend className="text-[13.5px] font-medium">Destination</legend>
+      <fieldset className="space-y-2 border-t border-border/70 pt-4" disabled={destinationManaged || locked}>
+        <legend className="text-[13.5px] font-medium">
+          Destination{destinationManaged && <span className="ml-2 text-[12px] font-normal text-muted-foreground">External (set by WEBHOOK_URL)</span>}
+        </legend>
         <div className="grid gap-2 md:grid-cols-2">
           {(
             [
@@ -197,13 +227,50 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
         )}
       </div>
 
+      <div className="space-y-1.5">
+        <Label htmlFor="webhook-bearer" className="text-[13.5px] font-medium">
+          Destination authorization token <span className="font-normal text-muted-foreground">(optional)</span>
+        </Label>
+        {bearerManaged ? (
+          <p className="rounded-md border border-dashed border-border bg-muted/40 px-3 py-2 text-[12.5px] text-muted-foreground">
+            Set by the <code className="font-mono">WEBHOOK_BEARER_TOKEN</code> environment variable: <span className="font-mono">{settings.maskedBearer}</span>
+          </p>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id="webhook-bearer"
+              type="password"
+              autoComplete="off"
+              value={bearer}
+              onChange={(e) => (setBearer(e.target.value), setClearBearer(false))}
+              placeholder={settings.maskedBearer ? `Current: ${settings.maskedBearer} (type to replace)` : "Paste the token your webhook endpoint requires"}
+              className="min-w-0 flex-1 font-mono text-[13px]"
+            />
+            {settings.maskedBearer && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => (setBearer(""), setClearBearer(true))} disabled={clearBearer}>
+                {clearBearer ? "Will be removed" : "Remove"}
+              </Button>
+            )}
+          </div>
+        )}
+        <p className="text-[12px] leading-relaxed text-muted-foreground">
+          Sent as <code className="font-mono">Authorization: Bearer …</code> to external destinations that require their own key, such as an
+          automation webhook trigger. Stored server-side and never shown again.
+        </p>
+      </div>
+
       <div className="divide-y divide-border/70 border-t border-border/70">
         <ToggleRow
           id="auto-queue"
           label="Queue new submissions automatically"
-          description="Off by default so demos are predictable. When on, every new request is queued and an event is sent on submission."
+          description={
+            autoQueueManaged
+              ? "Set by the AUTO_QUEUE_NEW_REQUESTS environment variable."
+              : "Off by default so demos are predictable. When on, every new request is queued and an event is sent on submission."
+          }
           checked={autoQueue}
           onChange={setAutoQueue}
+          disabled={autoQueueManaged || locked}
         />
         <ToggleRow
           id="include-client"
@@ -211,6 +278,7 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
           description="Off by default. Payloads carry segment, region, and tenure only. Turn on to add household name and primary contact."
           checked={includeClient}
           onChange={setIncludeClient}
+          disabled={locked}
         />
         <ToggleRow
           id="mock-failure"
@@ -218,11 +286,13 @@ export function IntegrationSettingsForm({ settings, mockReceiverUrl }: { setting
           description="The mock receiver responds HTTP 503 so you can demonstrate retries, backoff, and manual retry."
           checked={mockFailure}
           onChange={setMockFailure}
+          disabled={locked}
         />
       </div>
+      </fieldset>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-border/70 pt-4">
-        <Button onClick={save} disabled={!dirty || saving}>
+        <Button onClick={save} disabled={!dirty || saving || locked}>
           {saving && <Loader2 className="animate-spin" />}
           Save settings
         </Button>

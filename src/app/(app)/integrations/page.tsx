@@ -15,6 +15,7 @@ import { automationOverview } from "@/lib/server/automation";
 import { config } from "@/lib/server/config";
 import { sql } from "@/lib/server/db";
 import { getRequest } from "@/lib/server/requests";
+import { getDemoSession } from "@/lib/server/session";
 import { getSettings, toPublicSettings } from "@/lib/server/settings";
 import { buildQueuedEvent } from "@/lib/server/webhooks/envelope";
 import { deliveryStats, getDelivery, listDeliveries } from "@/lib/server/webhooks/dispatcher";
@@ -150,12 +151,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 }
 
 async function ConnectionTab({ url }: { url: string }) {
-  const settings = await getSettings();
+  const [settings, session] = await Promise.all([getSettings(), getDemoSession()]);
   const p = toPublicSettings(settings);
+  const canAdmin = session.viewer?.isAdmin ?? false;
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
       <Panel title="Outbound webhook" description={`Last changed ${formatDateTime(p.updatedAt)}${p.updatedBy ? ` by ${p.updatedBy}` : ""}`}>
-        <IntegrationSettingsForm settings={p} mockReceiverUrl={`${url}/api/mock-receiver`} />
+        <IntegrationSettingsForm settings={p} mockReceiverUrl={`${url}/api/mock-receiver`} canAdmin={canAdmin} />
       </Panel>
       <div className="flex flex-col gap-6">
         <Panel title="Credentials" description="Stored server-side and never sent to the browser unless you choose Reveal.">
@@ -167,6 +169,7 @@ async function ConnectionTab({ url }: { url: string }) {
               masked={p.maskedSecret}
               managedBy={p.secretSource === "environment" ? "WEBHOOK_SIGNING_SECRET" : null}
               rotateWarning="Events signed after rotation will fail verification until the receiving workflow is updated with the new secret."
+              canAdmin={canAdmin}
             />
             <CredentialField
               which="apiKey"
@@ -175,6 +178,7 @@ async function ConnectionTab({ url }: { url: string }) {
               masked={p.maskedApiKey}
               managedBy={p.apiKeySource === "environment" ? `AGENT_API_KEYS (${p.envApiKeyCount} key${p.envApiKeyCount === 1 ? "" : "s"})` : null}
               rotateWarning="The current key stops working immediately. Any automation using it will receive 401 until it is updated."
+              canAdmin={canAdmin}
             />
           </div>
         </Panel>
@@ -196,7 +200,7 @@ async function ConnectionTab({ url }: { url: string }) {
           </ol>
           <p className="mt-4 flex gap-2 rounded-md border border-[#e5d3a4] bg-[#fbf5e6] px-3 py-2 text-[12px] leading-relaxed text-[#6a4c0f]">
             <AlertTriangle className="mt-px size-3.5 shrink-0" />
-            External automation must reach this app over HTTPS. A deployment on localhost or behind sign-in cannot be called by a hosted workflow.
+            External automation must reach this app over HTTPS; localhost is not reachable. For apps behind Cursor sign-in, the workflow sends a Cursor API key in the x-cursor-app-token header.
           </p>
         </Panel>
       </div>

@@ -161,9 +161,9 @@ Attach the issue your workflow created. Idempotent: sending the same key and URL
 | Field | Rules |
 | --- | --- |
 | `claimToken` | required |
-| `issueKey` | like `PROJ-123` |
+| `issueKey` | `PROJ-123`, `#12`, `EDJ-Application#12`, or `owner/repo#12` |
 | `issueUrl` | `https://` URL |
-| `system` | optional, default `jira` |
+| `system` | optional, default `jira` (use `github` for GitHub issues) |
 
 ```bash
 curl -s -X PUT "$CPI_BASE_URL/api/v1/requests/CPI-1033/external-reference" \

@@ -101,12 +101,16 @@ export const automationStatusSchema = z.object({
   leaseSeconds,
 });
 
+// Jira-style keys (PROJ-123) or GitHub references (#12, EDJ-Application#12, owner/repo#12).
 const issueKey = z
   .string()
   .trim()
   .min(2)
-  .max(64)
-  .regex(/^[A-Za-z][A-Za-z0-9_]*-\d+$/, "Issue keys look like PROJ-123.");
+  .max(140)
+  .regex(
+    /^(?:[A-Za-z][A-Za-z0-9_]*-\d+|(?:[A-Za-z0-9_.-]+\/)?[A-Za-z0-9_.-]*#\d+)$/,
+    "Issue keys look like PROJ-123 or owner/repo#12.",
+  );
 const issueUrl = z
   .string()
   .trim()
@@ -167,6 +171,13 @@ export const settingsSchema = z
       .trim()
       .min(16, "Signing secrets must be at least 16 characters.")
       .max(200)
+      .optional(),
+    bearerToken: z
+      .string()
+      .trim()
+      .max(500)
+      .refine((v) => v === "" || v.length >= 8, "Destination tokens must be at least 8 characters.")
+      .refine((v) => !/\s/.test(v), "Destination tokens cannot contain spaces.")
       .optional(),
     autoQueue: z.boolean().optional(),
     includeClientIdentity: z.boolean().optional(),

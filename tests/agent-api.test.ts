@@ -100,6 +100,19 @@ describe("agent API processing flow", () => {
     expect(types).toEqual(expect.arrayContaining(["automation.queued", "automation.claimed", "external_reference.attached", "automation.completed"]));
   });
 
+  it("accepts GitHub issue references", async () => {
+    await queueRoute(uiRequest("/api/requests/CPI-1006/queue", { body: {} }), params("CPI-1006"));
+    const claim = await (await claimRoute(agentRequest("/api/v1/requests/CPI-1006/claim", apiKey, { body: { workerId: "gh" } }), params("CPI-1006"))).json();
+    const ref = await referenceRoute(
+      agentRequest("/api/v1/requests/CPI-1006/external-reference", apiKey, {
+        method: "PUT",
+        body: { claimToken: claim.data.claimToken, issueKey: "niktunXSI/EDJ-Application#12", issueUrl: "https://github.com/niktunXSI/EDJ-Application/issues/12", system: "github" },
+      }),
+      params("CPI-1006"),
+    );
+    expect(ref.status).toBe(200);
+  });
+
   it("returns 404 for unknown requests and 422 for invalid claim bodies", async () => {
     expect((await getRoute(agentRequest("/api/v1/requests/CPI-0001", apiKey), params("CPI-0001"))).status).toBe(404);
     const bad = await claimRoute(agentRequest("/api/v1/requests/CPI-1004/claim", apiKey, { body: { workerId: "" } }), params("CPI-1004"));

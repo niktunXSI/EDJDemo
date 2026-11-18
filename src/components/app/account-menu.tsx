@@ -46,7 +46,7 @@ export function AccountMenu({
   personas: Persona[];
   sessionId: string;
   demoMode: boolean;
-  viewer: { name: string; simulated: boolean } | null;
+  viewer: { name: string; simulated: boolean; isAdmin: boolean } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -127,7 +127,7 @@ export function AccountMenu({
               </span>
             </DropdownMenuItem>
           ))}
-          {demoMode && (
+          {demoMode && viewer?.isAdmin && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={() => setResetOpen(true)} className="text-[#9b1c13] focus:text-[#9b1c13]">

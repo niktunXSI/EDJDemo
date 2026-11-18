@@ -126,6 +126,18 @@ describe("webhook delivery", () => {
     expect(new Set(receiver.received.map((r) => r.headers["x-cpi-event-id"])).size).toBe(1);
   });
 
+  it("sends the destination bearer token and never stores the receiver's response body", async () => {
+    receiver = await startReceiver([202]);
+    await updateSettings({ destination: "external", url: receiver.url, bearerToken: "automation-trigger-token-123" }, "test");
+    const outcome = await queueRequest("CPI-1004", USER, BASE);
+    expect(outcome.delivery?.status).toBe("delivered");
+    expect(receiver.received[0].headers.authorization).toBe("Bearer automation-trigger-token-123");
+    const delivery = await getDelivery(outcome.deliveryId!);
+    expect(delivery?.attempts?.[0].responseExcerpt).toBeNull();
+    await updateSettings({ bearerToken: "" }, "test");
+    expect((await getSettings()).bearerToken).toBe("");
+  });
+
   it("does not retry permanent client errors automatically", async () => {
     receiver = await startReceiver([400]);
     await updateSettings({ destination: "external", url: receiver.url }, "test");

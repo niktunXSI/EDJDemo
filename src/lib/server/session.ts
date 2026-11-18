@@ -2,6 +2,7 @@ import "server-only";
 import { cookies, headers } from "next/headers";
 import { getIdentity, type VerifiedIdentity } from "../../../cursor/identity";
 import { CSRF_COOKIE, CSRF_HEADER, DEFAULT_PERSONA_ID, PERSONA_COOKIE, SESSION_COOKIE } from "@/lib/session-constants";
+import { config } from "./config";
 import { sql } from "./db";
 import { ApiError } from "./http";
 
@@ -25,7 +26,18 @@ export interface Viewer {
   name: string;
   email: string;
   simulated: boolean;
-  canManageCredentials: boolean;
+  isAdmin: boolean;
+}
+
+/**
+ * Administrators can change integration settings, view or rotate credentials, and reset demo
+ * data: Cursor team admins on team apps, plus signed-in people whose verified email is listed in
+ * APP_ADMIN_EMAILS. Every other viewer can use the product but not these controls.
+ */
+export function isAdminIdentity(identity: VerifiedIdentity, adminEmails: string[] = config.adminEmails): boolean {
+  if (identity.kind !== "person") return false;
+  if (identity.appVisibility === "team" && identity.teamRole === "admin") return true;
+  return identity.emailVerified && identity.email !== "" && adminEmails.includes(identity.email.toLowerCase());
 }
 
 function toViewer(identity: VerifiedIdentity): Viewer {
@@ -33,8 +45,7 @@ function toViewer(identity: VerifiedIdentity): Viewer {
     name: identity.name || identity.email || "Signed-in viewer",
     email: identity.email,
     simulated: identity.simulated,
-    canManageCredentials:
-      identity.kind === "person" && (identity.appVisibility !== "team" || identity.teamRole === "admin"),
+    isAdmin: isAdminIdentity(identity),
   };
 }
 
@@ -111,9 +122,12 @@ export async function requireUiSession(request: Request): Promise<Actor> {
   return { type: "user", id: persona.id, name: persona.name, sessionId, viewer };
 }
 
-/** Revealing or rotating credentials is limited to the app owner or, for team apps, team admins. */
-export function requireCredentialManager(actor: Actor) {
-  if (!actor.viewer.canManageCredentials) {
-    throw new ApiError(403, "forbidden", "Only the app owner or a team admin can view or rotate integration credentials.");
+export function requireAdmin(actor: Actor) {
+  if (!actor.viewer.isAdmin) {
+    throw new ApiError(
+      403,
+      "forbidden",
+      "Only administrators can do this. Team admins qualify automatically; the app owner can add emails to APP_ADMIN_EMAILS.",
+    );
   }
 }

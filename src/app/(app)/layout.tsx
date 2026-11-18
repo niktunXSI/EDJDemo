@@ -39,7 +39,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <span className="font-serif text-[15px] font-semibold text-[#1d4a37] lg:hidden">Edward Jones</span>
           <div className="ml-auto flex items-center gap-3">
             <DemoIndicator className="hidden md:inline-flex" />
-            <AccountMenu persona={persona} personas={personas} sessionId={sessionId} demoMode={config.demoMode} viewer={viewer ? { name: viewer.name, simulated: viewer.simulated } : null} />
+            <AccountMenu persona={persona} personas={personas} sessionId={sessionId} demoMode={config.demoMode} viewer={viewer ? { name: viewer.name, simulated: viewer.simulated, isAdmin: viewer.isAdmin } : null} />
           </div>
         </header>
         <main className="flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">

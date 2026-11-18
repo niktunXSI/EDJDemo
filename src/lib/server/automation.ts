@@ -290,7 +290,8 @@ export async function claimRequest(requestId: string, workerId: string, leaseSec
         `select * from automation_jobs where request_id = $1 and status in ('queued','processing') order by created_at desc limit 1`,
         [id],
       );
-      if (active?.status === "processing") {
+      // A "queued" job we could not lock is being claimed by a concurrent worker right now.
+      if (active) {
         throw conflict("already_claimed", `Request ${id} is already being processed by another worker.`, {
           claimedBy: active.claimed_by,
           leaseExpiresAt: isoOrNull(active.lease_expires_at),

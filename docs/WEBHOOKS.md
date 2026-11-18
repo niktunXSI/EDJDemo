@@ -22,6 +22,7 @@ X-CPI-Event-Type: feedback.request.queued
 X-CPI-Delivery-Attempt: 1
 X-CPI-Timestamp: 1795000000
 X-CPI-Signature: v1=<64 hex characters>
+Authorization: Bearer <token>        (only when a destination authorization token is configured)
 ```
 
 The body is the event envelope. A complete example captured from the running application is in [`sample-webhook-payload.json`](./sample-webhook-payload.json).

@@ -15,6 +15,7 @@ interface ConfigRow {
   include_client_identity: boolean;
   mock_failure_mode: boolean;
   agent_api_key: string | null;
+  destination_bearer: string | null;
   updated_at: Date;
   updated_by: string | null;
 }
@@ -22,11 +23,15 @@ interface ConfigRow {
 export interface IntegrationSettings {
   enabled: boolean;
   destination: "mock" | "external";
+  destinationSource: "environment" | "database";
   url: string;
   urlSource: "environment" | "database" | "none";
+  bearerToken: string;
+  bearerSource: "environment" | "database" | "none";
   secret: string;
   secretSource: "environment" | "database";
   autoQueue: boolean;
+  autoQueueSource: "environment" | "database";
   includeClientIdentity: boolean;
   mockFailureMode: boolean;
   storedApiKey: string | null;
@@ -34,8 +39,9 @@ export interface IntegrationSettings {
   updatedBy: string | null;
 }
 
-export type PublicIntegrationSettings = Omit<IntegrationSettings, "secret" | "storedApiKey" | "url"> & {
+export type PublicIntegrationSettings = Omit<IntegrationSettings, "secret" | "storedApiKey" | "url" | "bearerToken"> & {
   url: string;
+  maskedBearer: string | null;
   displayUrl: string | null;
   maskedSecret: string | null;
   maskedApiKey: string | null;
@@ -48,18 +54,26 @@ export async function getSettings(q: Queryable = { query: sql }): Promise<Integr
   if (!row) throw new ApiError(500, "not_configured", "Integration settings are missing.");
   const envUrl = config.envWebhookUrl;
   const envSecret = config.envWebhookSecret;
+  const envBearer = config.envWebhookBearer;
+  const envAutoQueue = config.envAutoQueue;
   const secret = envSecret || row.secret || "";
+  const bearerToken = envBearer || row.destination_bearer || "";
   registerSecret(secret);
+  registerSecret(bearerToken);
   registerSecret(row.agent_api_key);
   config.envApiKeys.forEach(registerSecret);
   return {
     enabled: row.enabled,
-    destination: row.destination,
+    destination: envUrl ? "external" : row.destination,
+    destinationSource: envUrl ? "environment" : "database",
     url: envUrl || row.url || "",
     urlSource: envUrl ? "environment" : row.url ? "database" : "none",
+    bearerToken,
+    bearerSource: envBearer ? "environment" : row.destination_bearer ? "database" : "none",
     secret,
     secretSource: envSecret ? "environment" : "database",
-    autoQueue: row.auto_queue,
+    autoQueue: envAutoQueue ?? row.auto_queue,
+    autoQueueSource: envAutoQueue === undefined ? "database" : "environment",
     includeClientIdentity: row.include_client_identity,
     mockFailureMode: row.mock_failure_mode,
     storedApiKey: row.agent_api_key,
@@ -72,12 +86,16 @@ export function toPublicSettings(s: IntegrationSettings): PublicIntegrationSetti
   return {
     enabled: s.enabled,
     destination: s.destination,
+    destinationSource: s.destinationSource,
     url: s.urlSource === "environment" ? "" : s.url,
+    maskedBearer: maskSecret(s.bearerToken),
+    bearerSource: s.bearerSource,
     displayUrl: sanitizeUrl(s.url),
     urlSource: s.urlSource,
     maskedSecret: maskSecret(s.secret),
     secretSource: s.secretSource,
     autoQueue: s.autoQueue,
+    autoQueueSource: s.autoQueueSource,
     includeClientIdentity: s.includeClientIdentity,
     mockFailureMode: s.mockFailureMode,
     maskedApiKey: config.envApiKeys.length ? null : maskSecret(s.storedApiKey),
@@ -111,6 +129,7 @@ export interface SettingsPatch {
   destination?: "mock" | "external";
   url?: string;
   secret?: string;
+  bearerToken?: string;
   autoQueue?: boolean;
   includeClientIdentity?: boolean;
   mockFailureMode?: boolean;
@@ -121,6 +140,15 @@ export async function updateSettings(patch: SettingsPatch, actor: string) {
   if (patch.url !== undefined && patch.url !== "") await validateWebhookUrl(patch.url);
   if (patch.secret !== undefined && current.secretSource === "environment") {
     throw new ApiError(409, "managed_by_environment", "The signing secret is set by WEBHOOK_SIGNING_SECRET and cannot be changed here.");
+  }
+  if (patch.bearerToken !== undefined && current.bearerSource === "environment") {
+    throw new ApiError(409, "managed_by_environment", "The destination token is set by WEBHOOK_BEARER_TOKEN and cannot be changed here.");
+  }
+  if (patch.destination !== undefined && current.destinationSource === "environment") {
+    throw new ApiError(409, "managed_by_environment", "The destination is set by WEBHOOK_URL and cannot be changed here.");
+  }
+  if (patch.autoQueue !== undefined && current.autoQueueSource === "environment") {
+    throw new ApiError(409, "managed_by_environment", "Automatic queueing is set by AUTO_QUEUE_NEW_REQUESTS and cannot be changed here.");
   }
   const nextDestination = patch.destination ?? current.destination;
   const nextUrl = patch.url !== undefined ? patch.url : current.url;
@@ -136,6 +164,7 @@ export async function updateSettings(patch: SettingsPatch, actor: string) {
        auto_queue = coalesce($6, auto_queue),
        include_client_identity = coalesce($7, include_client_identity),
        mock_failure_mode = coalesce($8, mock_failure_mode),
+       destination_bearer = case when $10::boolean then nullif($11, '') else destination_bearer end,
        updated_at = now(),
        updated_by = $9
      where id = 1`,
@@ -149,6 +178,8 @@ export async function updateSettings(patch: SettingsPatch, actor: string) {
       patch.includeClientIdentity ?? null,
       patch.mockFailureMode ?? null,
       actor,
+      patch.bearerToken !== undefined,
+      patch.bearerToken ?? "",
     ],
   );
   return getSettings();

@@ -58,7 +58,7 @@ The delivery worker starts inside the dev server automatically (`DELIVERY_WORKER
 - The interactive UI uses a **clearly identified demo session**: no sign-in, a session cookie, and a selectable persona (Jordan Ellis, Product Manager; Priya Raman, Operations Lead; Natalie Brooks, Product Owner) shown in the account menu. Actions are attributed to the selected persona in the activity timeline.
 - When published on Cursor's app hosting (private or team), every UI endpoint also requires the **verified signed-in viewer** from the hosting gate (`cursor/identity.ts`). The account menu shows who is signed in. On a local dev server the helper supplies a simulated viewer (`cursor/identity.dev.ts`), so no sign-in is needed locally.
 - State-changing UI endpoints require the session cookie, a same-origin request, and a double-submit CSRF token.
-- Revealing or rotating the signing secret and API key is limited to the app owner or, on team apps, team admins.
+- **Administrators** (Cursor team admins, plus verified emails listed in `APP_ADMIN_EMAILS`) are the only viewers who can change integration settings, reveal or rotate credentials, and reset demo data. Everyone else can use the product.
 - In production, webhook destinations must resolve to public IP addresses (localhost, private ranges, and cloud metadata hosts are rejected at save time and again at send time). Set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=true` only for a private-network deployment.
 - The Agent API (`/api/v1`) requires a bearer key. Keys and the signing secret are stored server-side, compared in constant time, masked in the UI, and redacted from logs and delivery errors.
 - In a real deployment, put the UI behind your identity provider (SSO) and set `AGENT_API_KEYS` and `WEBHOOK_SIGNING_SECRET` from your secret manager.
@@ -78,6 +78,10 @@ Webhook deliveries live in a durable database outbox. The first attempt happens 
 4. **While viewing** the Integrations page or a request with a pending delivery, the browser nudges the dispatcher every 10 seconds.
 
 Each pass also returns expired automation leases to the queue.
+
+## GitHub issues automation
+
+A ready-to-use Cursor automation turns every new request into a structured GitHub issue in [niktunXSI/EDJ-Application](https://github.com/niktunXSI/EDJ-Application) and links it back to the request. Setup, secrets, and the agent prompt are in [docs/AUTOMATION.md](./docs/AUTOMATION.md); the agent's helper is [`automation/cpi-github.mjs`](./automation/cpi-github.mjs) and its prompt is [`automation/PROMPT.md`](./automation/PROMPT.md).
 
 ## Connecting an external automation workflow
 
@@ -101,6 +105,8 @@ Nothing in this app assumes a particular automation vendor or invents a vendor e
 | `APP_BASE_URL` | host environment | Public HTTPS origin of this app |
 | `AGENT_API_KEYS` | host secret | One or more long random keys; give one to the workflow |
 | `WEBHOOK_SIGNING_SECRET` | host secret | 32+ random characters; give it to the workflow |
+| `WEBHOOK_BEARER_TOKEN` | host secret | The workflow trigger's API key, if it requires `Authorization: Bearer` |
+| `APP_ADMIN_EMAILS` | host secret | Emails allowed to administer integrations |
 | Webhook URL | Integrations page or `WEBHOOK_URL` | The workflow's inbound HTTPS trigger, if it has one |
 | Destination | Integrations page | **External webhook URL** |
 | Scheduler (serverless only) | host cron | `POST /api/v1/webhooks/dispatch` every minute with the API key |
@@ -108,7 +114,7 @@ Nothing in this app assumes a particular automation vendor or invents a vendor e
 
 ## Hosting
 
-- **The automation must be able to reach this app over the public internet via HTTPS.** `localhost` is not reachable from a hosted workflow, and a deployment behind an interactive sign-in page (including private or team-only app hosting) blocks API calls from automation. Use a deployment where `/api/v1/*` is reachable with bearer authentication, or expose it through an API gateway.
+- **The automation must be able to reach this app over the public internet via HTTPS.** `localhost` is not reachable from a hosted workflow. When the app is published on Cursor's app hosting (private or team), the workflow must also send a Cursor API key in the `x-cursor-app-token` header to pass the sign-in gate, and the Agent API key in `X-API-Key` (the bundled helper does both). On other hosts, `/api/v1/*` only needs the Agent API key.
 - **Outbound webhooks** need the reverse: the workflow's trigger URL must be reachable from this app.
 - **Persistent state must live in PostgreSQL** (Neon, Supabase, RDS, Cloud SQL, …). Do not rely on the local PGlite directory on serverless or container hosts with ephemeral disks.
 - Any Node.js host works: Vercel or similar (add the dispatch cron), Render/Fly/containers (`npm run build && npm start`; the inline worker handles retries).
@@ -140,7 +146,8 @@ Nothing in this app assumes a particular automation vendor or invents a vendor e
 ```
 migrations/            SQL schema (applied by PGlite locally and scripts/migrate.mjs in production)
 scripts/               migrate.mjs, reset-demo.ts, worker.mjs
-docs/                  API reference, webhook contract, sample payload and test vector
+docs/                  API reference, webhook contract, automation setup, sample payload and test vector
+automation/            GitHub issues helper (cpi-github.mjs) and the automation agent prompt
 src/app/(app)/         Pages: overview, requests, clients, advisors, integrations
 src/app/api/           UI endpoints (session + CSRF) and /api/v1 Agent API (bearer)
 src/lib/server/        Database, requests, automation, webhooks (signing, outbox, mock receiver), seed
