@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { queueRequest } from "@/lib/server/automation";
 import { sql } from "@/lib/server/db";
@@ -137,6 +138,24 @@ describe("webhook delivery", () => {
     expect(delivery?.attempts?.[0].responseExcerpt).toBeNull();
     await updateSettings({ bearerToken: "" }, "test");
     expect((await getSettings()).bearerToken).toBe("");
+  });
+
+  it("records a short reason for refused deliveries without storing the body", async () => {
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(403, { "content-type": "application/json" });
+        res.end(JSON.stringify({ code: "error", message: "Automation is disabled", detail: "x".repeat(5000) }));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as { port: number }).port;
+    await updateSettings({ destination: "external", url: `http://127.0.0.1:${port}/hook` }, "test");
+    const outcome = await queueRequest("CPI-1004", USER, BASE);
+    const delivery = await getDelivery(outcome.deliveryId!);
+    expect(delivery?.lastError).toBe("Receiver responded with HTTP 403: Automation is disabled");
+    expect(delivery?.attempts?.[0].responseExcerpt).toBeNull();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
   it("does not retry permanent client errors automatically", async () => {

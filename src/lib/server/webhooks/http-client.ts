@@ -29,16 +29,40 @@ function guardedLookup(allowPrivate: boolean) {
   };
 }
 
+export interface WebhookResponse {
+  status: number;
+  /** For 4xx/5xx JSON responses only: the receiver's short `message`/`error` text, unredacted. */
+  reason: string | null;
+  /** Set when an intermediary (proxy or CDN) appears to have produced the response. */
+  via: string | null;
+}
+
+function extractReason(contentType: string, raw: string): string | null {
+  if (!contentType.includes("json") || !raw) return null;
+  try {
+    const data = JSON.parse(raw);
+    const candidate =
+      (typeof data?.message === "string" && data.message) ||
+      (typeof data?.error === "string" && data.error) ||
+      (typeof data?.error?.message === "string" && data.error.message) ||
+      null;
+    return candidate ? String(candidate).slice(0, 200) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * POSTs a body and returns only the status code. Redirects are not followed and the response
- * body is drained and discarded, so receiver content is never stored or shown.
+ * POSTs a body and returns the status code. Redirects are not followed. The response body is
+ * drained and discarded; for error responses only a short JSON reason field is kept so failed
+ * deliveries can be diagnosed. Arbitrary receiver content is never stored or shown.
  */
 export function postWebhook(
   target: string,
   headers: Record<string, string>,
   body: string,
   options: { timeoutMs: number; allowPrivate: boolean },
-): Promise<{ status: number }> {
+): Promise<WebhookResponse> {
   const url = new URL(target);
   const client = url.protocol === "https:" ? https : http;
   return new Promise((resolve, reject) => {
@@ -51,14 +75,27 @@ export function postWebhook(
         timeout: options.timeoutMs,
       },
       (response) => {
+        const status = response.statusCode ?? 0;
+        const keep = status >= 400;
+        const chunks: Buffer[] = [];
         let received = 0;
         response.on("data", (chunk: Buffer) => {
           received += chunk.length;
+          if (keep && received <= 16 * 1024) chunks.push(chunk);
           if (received > 64 * 1024) response.destroy();
         });
-        response.on("end", () => resolve({ status: response.statusCode ?? 0 }));
-        response.on("close", () => resolve({ status: response.statusCode ?? 0 }));
-        response.on("error", () => resolve({ status: response.statusCode ?? 0 }));
+        const finish = () => {
+          const contentType = String(response.headers["content-type"] ?? "").toLowerCase();
+          const viaHeader = response.headers["via"] ?? response.headers["x-squid-error"] ?? null;
+          resolve({
+            status,
+            reason: keep ? extractReason(contentType, Buffer.concat(chunks).toString("utf8")) : null,
+            via: keep && viaHeader ? String(viaHeader).slice(0, 80) : null,
+          });
+        };
+        response.on("end", finish);
+        response.on("close", finish);
+        response.on("error", finish);
       },
     );
     const timer = setTimeout(() => request.destroy(new DeliveryTimeoutError("timeout")), options.timeoutMs);

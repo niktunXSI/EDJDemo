@@ -170,7 +170,12 @@ async function send(row: DeliveryRow, settings: IntegrationSettings, attemptNumb
     return {
       outcome: ok ? "success" : "http_error",
       statusCode: response.status,
-      error: ok ? null : `Receiver responded with HTTP ${response.status}${response.status >= 300 && response.status < 400 ? " (redirects are not followed)" : ""}.`,
+      error: ok
+        ? null
+        : redact(
+            `Receiver responded with HTTP ${response.status}${response.status >= 300 && response.status < 400 ? " (redirects are not followed)" : ""}${response.reason ? `: ${response.reason}` : "."}${response.via ? ` (answered by intermediary: ${response.via})` : ""}`,
+            300,
+          ),
       responseExcerpt: null,
       retryable: !ok && isRetryableStatus(response.status),
       durationMs: Date.now() - started,
