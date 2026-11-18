@@ -56,7 +56,10 @@ The delivery worker starts inside the dev server automatically (`DELIVERY_WORKER
 ## Demo session and security
 
 - The interactive UI uses a **clearly identified demo session**: no sign-in, a session cookie, and a selectable persona (Jordan Ellis, Product Manager; Priya Raman, Operations Lead; Natalie Brooks, Product Owner) shown in the account menu. Actions are attributed to the selected persona in the activity timeline.
+- When published on Cursor's app hosting (private or team), every UI endpoint also requires the **verified signed-in viewer** from the hosting gate (`cursor/identity.ts`). The account menu shows who is signed in. On a local dev server the helper supplies a simulated viewer (`cursor/identity.dev.ts`), so no sign-in is needed locally.
 - State-changing UI endpoints require the session cookie, a same-origin request, and a double-submit CSRF token.
+- Revealing or rotating the signing secret and API key is limited to the app owner or, on team apps, team admins.
+- In production, webhook destinations must resolve to public IP addresses (localhost, private ranges, and cloud metadata hosts are rejected at save time and again at send time). Set `WEBHOOK_ALLOW_PRIVATE_NETWORKS=true` only for a private-network deployment.
 - The Agent API (`/api/v1`) requires a bearer key. Keys and the signing secret are stored server-side, compared in constant time, masked in the UI, and redacted from logs and delivery errors.
 - In a real deployment, put the UI behind your identity provider (SSO) and set `AGENT_API_KEYS` and `WEBHOOK_SIGNING_SECRET` from your secret manager.
 

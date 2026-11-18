@@ -7,6 +7,7 @@ import { ApiError, conflict, notFound } from "../http";
 import { redact, sanitizeUrl } from "../redact";
 import { recordActivity, type ActorRef } from "../requests";
 import { getSettings, type IntegrationSettings } from "../settings";
+import { assertSafeDestination } from "./destination";
 import { MOCK_TARGET, receiveMockWebhook } from "./mock-receiver";
 import { ATTEMPT_HEADER, EVENT_ID_HEADER, EVENT_TYPE_HEADER, signatureHeaders } from "./signing";
 
@@ -145,6 +146,18 @@ async function send(row: DeliveryRow, settings: IntegrationSettings, attemptNumb
   const target = row.target_url;
   if (!target) {
     return { outcome: "network_error", statusCode: null, error: "No webhook URL is configured.", responseExcerpt: null, retryable: false, durationMs: 0 };
+  }
+  try {
+    await assertSafeDestination(target);
+  } catch (error) {
+    return {
+      outcome: "network_error",
+      statusCode: null,
+      error: error instanceof Error ? error.message : "Destination not allowed.",
+      responseExcerpt: null,
+      retryable: false,
+      durationMs: Date.now() - started,
+    };
   }
   try {
     const response = await fetch(target, {

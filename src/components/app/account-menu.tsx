@@ -40,11 +40,13 @@ export function AccountMenu({
   personas,
   sessionId,
   demoMode,
+  viewer,
 }: {
   persona: Persona;
   personas: Persona[];
   sessionId: string;
   demoMode: boolean;
+  viewer: { name: string; simulated: boolean } | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -109,7 +111,9 @@ export function AccountMenu({
           <div className="mx-2 mb-2 flex items-start gap-2 rounded-md bg-[#fbf5e6] px-2.5 py-2 text-[11.5px] text-[#6a4c0f]">
             <ShieldCheck className="mt-px size-3.5 shrink-0" />
             <span>
-              Demo session <span className="font-mono">{sessionId.slice(0, 13)}</span>. No sign-in; actions are attributed to the selected persona.
+              Demo session <span className="font-mono">{sessionId.slice(0, 13)}</span>
+              {viewer ? (viewer.simulated ? " · local simulated viewer" : ` · signed in as ${viewer.name}`) : ""}. Actions are attributed to the
+              selected demo persona.
             </span>
           </div>
           <DropdownMenuSeparator />

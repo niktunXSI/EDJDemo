@@ -12,6 +12,7 @@ export const POST = route(async (request: Request) => {
   if (Buffer.byteLength(raw) > MAX_BODY_BYTES) {
     return json({ error: { code: "payload_too_large", message: "Payload exceeds 256 KB." } }, 413);
   }
-  const receipt = await receiveMockWebhook(raw, request.headers);
+  // Unsigned or mis-signed requests from the network are rejected without being stored.
+  const receipt = await receiveMockWebhook(raw, request.headers, { recordInvalid: false });
   return json(receipt.body, receipt.status);
 });

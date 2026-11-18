@@ -4,6 +4,7 @@ import { sql, type Queryable } from "./db";
 import { ApiError } from "./http";
 import { maskSecret, registerSecret, sanitizeUrl } from "./redact";
 import { generateApiKey, generateSigningSecret } from "./seed";
+import { assertSafeDestination } from "./webhooks/destination";
 
 interface ConfigRow {
   enabled: boolean;
@@ -87,9 +88,7 @@ export function toPublicSettings(s: IntegrationSettings): PublicIntegrationSetti
   };
 }
 
-const BLOCKED_HOSTS = new Set(["169.254.169.254", "metadata.google.internal", "metadata", "100.100.100.200"]);
-
-export function validateWebhookUrl(raw: string) {
+export async function validateWebhookUrl(raw: string) {
   let url: URL;
   try {
     url = new URL(raw);
@@ -101,12 +100,10 @@ export function validateWebhookUrl(raw: string) {
   if (url.protocol !== "https:" && !(url.protocol === "http:" && (isLocal || process.env.WEBHOOK_ALLOW_HTTP === "true"))) {
     throw new ApiError(422, "invalid_webhook_url", "Webhook URLs must use https:// (http:// is allowed only for localhost).");
   }
-  if (BLOCKED_HOSTS.has(host)) {
-    throw new ApiError(422, "invalid_webhook_url", "That host is not allowed as a webhook destination.");
-  }
   if (url.username || url.password) {
     throw new ApiError(422, "invalid_webhook_url", "Do not embed credentials in the webhook URL; payloads are signed instead.");
   }
+  await assertSafeDestination(raw);
 }
 
 export interface SettingsPatch {
@@ -121,7 +118,7 @@ export interface SettingsPatch {
 
 export async function updateSettings(patch: SettingsPatch, actor: string) {
   const current = await getSettings();
-  if (patch.url !== undefined && patch.url !== "") validateWebhookUrl(patch.url);
+  if (patch.url !== undefined && patch.url !== "") await validateWebhookUrl(patch.url);
   if (patch.secret !== undefined && current.secretSource === "environment") {
     throw new ApiError(409, "managed_by_environment", "The signing secret is set by WEBHOOK_SIGNING_SECRET and cannot be changed here.");
   }

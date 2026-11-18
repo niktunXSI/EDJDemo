@@ -5,6 +5,7 @@ import { getSettings, updateSettings } from "@/lib/server/settings";
 import { dispatchDue, getDelivery, retryDelivery } from "@/lib/server/webhooks/dispatcher";
 import { computeSignature, signatureHeaders, verifySignature } from "@/lib/server/webhooks/signing";
 import { listMockEvents } from "@/lib/server/webhooks/mock-receiver";
+import { assertSafeDestination, isPrivateAddress } from "@/lib/server/webhooks/destination";
 import { makeDueNow, resetDatabase, startReceiver, USER } from "./support/helpers";
 
 const BASE = { baseUrl: "http://localhost:4317" };
@@ -157,5 +158,25 @@ describe("webhook delivery", () => {
     const outcome = await queueRequest("CPI-1004", USER, BASE);
     expect(outcome.delivery?.status).toBe("pending");
     expect(outcome.delivery?.statusCode).toBe(503);
+  });
+});
+
+describe("webhook destination guard", () => {
+  it("classifies private and public addresses", () => {
+    for (const address of ["127.0.0.1", "10.2.3.4", "172.20.0.1", "192.168.1.10", "169.254.169.254", "100.64.0.1", "::1", "fd00::1", "::ffff:10.0.0.1"]) {
+      expect(isPrivateAddress(address)).toBe(true);
+    }
+    for (const address of ["8.8.8.8", "52.1.2.3", "2606:4700::1111"]) expect(isPrivateAddress(address)).toBe(false);
+  });
+
+  it("rejects private destinations when private networks are not allowed", async () => {
+    for (const url of ["https://localhost/hook", "https://10.0.0.5/hook", "https://service.internal/hook", "https://[::1]/hook"]) {
+      await expect(assertSafeDestination(url, { allowPrivate: false })).rejects.toMatchObject({ code: "invalid_webhook_url" });
+    }
+    await expect(assertSafeDestination("https://8.8.8.8/hook", { allowPrivate: false })).resolves.toBeUndefined();
+  });
+
+  it("always rejects cloud metadata endpoints", async () => {
+    await expect(assertSafeDestination("http://169.254.169.254/latest", { allowPrivate: true })).rejects.toMatchObject({ code: "invalid_webhook_url" });
   });
 });

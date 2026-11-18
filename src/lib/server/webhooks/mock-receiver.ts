@@ -17,7 +17,11 @@ export interface MockReceipt {
  * The built-in mock receiver. It verifies the signature exactly as an external
  * receiver should, stores the event for display, and responds like a webhook endpoint.
  */
-export async function receiveMockWebhook(rawBody: string, headers: Headers): Promise<MockReceipt> {
+export async function receiveMockWebhook(
+  rawBody: string,
+  headers: Headers,
+  options: { recordInvalid?: boolean } = {},
+): Promise<MockReceipt> {
   const settings = await getSettings();
   const verdict = verifySignature({
     secret: settings.secret,
@@ -39,6 +43,9 @@ export async function receiveMockWebhook(rawBody: string, headers: Headers): Pro
   }
   if (headers.get(SIGNATURE_HEADER)) kept[SIGNATURE_HEADER] = "v1=[REDACTED]";
   const data = (body?.data ?? {}) as Record<string, unknown>;
+  if (!verdict.ok && options.recordInvalid === false) {
+    return { status, body: { received: false, signatureValid: false, error: redact(verdict.reason), mock: true } };
+  }
   await sql(
     `insert into mock_receiver_events (event_id, event_type, request_id, signature_valid, signature_error, response_status, headers, body)
      values ($1, $2, $3, $4, $5, $6, $7, $8)`,

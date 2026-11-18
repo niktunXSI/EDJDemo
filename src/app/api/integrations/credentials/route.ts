@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { json, readJson, route } from "@/lib/server/http";
-import { requireUiSession } from "@/lib/server/session";
+import { requireCredentialManager, requireUiSession } from "@/lib/server/session";
 import { revealCredential, rotateCredential, toPublicSettings } from "@/lib/server/settings";
 
 const schema = z.object({
@@ -10,6 +10,7 @@ const schema = z.object({
 
 export const POST = route(async (request: Request) => {
   const actor = await requireUiSession(request);
+  requireCredentialManager(actor);
   const { which, action } = schema.parse(await readJson(request));
   if (action === "reveal") {
     return json({ value: await revealCredential(which) });

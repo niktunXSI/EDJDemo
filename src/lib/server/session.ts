@@ -1,5 +1,6 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { getIdentity, type VerifiedIdentity } from "../../../cursor/identity";
 import { CSRF_COOKIE, CSRF_HEADER, DEFAULT_PERSONA_ID, PERSONA_COOKIE, SESSION_COOKIE } from "@/lib/session-constants";
 import { sql } from "./db";
 import { ApiError } from "./http";
@@ -17,6 +18,36 @@ export interface Actor {
   id: string;
   name: string;
   sessionId: string;
+  viewer: Viewer;
+}
+
+export interface Viewer {
+  name: string;
+  email: string;
+  simulated: boolean;
+  canManageCredentials: boolean;
+}
+
+function toViewer(identity: VerifiedIdentity): Viewer {
+  return {
+    name: identity.name || identity.email || "Signed-in viewer",
+    email: identity.email,
+    simulated: identity.simulated,
+    canManageCredentials:
+      identity.kind === "person" && (identity.appVisibility !== "team" || identity.teamRole === "admin"),
+  };
+}
+
+/**
+ * The signed-in viewer from the hosting platform's identity gate. On a local dev server the
+ * helper supplies a simulated viewer, so the UI works without sign-in there.
+ */
+async function requireViewer(source: Request | Headers): Promise<Viewer> {
+  const identity = await getIdentity(source);
+  if (!identity.verified) {
+    throw new ApiError(401, "unauthenticated", "Sign in to use Client Product Insights.");
+  }
+  return toViewer(identity);
 }
 
 export async function listPersonas(): Promise<Persona[]> {
@@ -33,8 +64,12 @@ async function resolvePersona(id: string | undefined): Promise<Persona> {
 /** For server components: the demo session established by src/proxy.ts. */
 export async function getDemoSession() {
   const jar = await cookies();
-  const persona = await resolvePersona(jar.get(PERSONA_COOKIE)?.value);
-  return { sessionId: jar.get(SESSION_COOKIE)?.value ?? "pending", persona };
+  const [persona, identity] = await Promise.all([resolvePersona(jar.get(PERSONA_COOKIE)?.value), getIdentity(await headers())]);
+  return {
+    sessionId: jar.get(SESSION_COOKIE)?.value ?? "pending",
+    persona,
+    viewer: identity.verified ? toViewer(identity) : null,
+  };
 }
 
 function parseCookies(header: string | null): Record<string, string> {
@@ -48,10 +83,11 @@ function parseCookies(header: string | null): Record<string, string> {
 }
 
 /**
- * Guards state-changing UI endpoints: requires the demo session cookie, a same-origin request,
- * and a double-submit CSRF token (header must equal the cpi_csrf cookie).
+ * Guards UI endpoints: requires a verified viewer, the demo session cookie, and for state
+ * changes a same-origin request with a double-submit CSRF token (header must equal the cpi_csrf cookie).
  */
 export async function requireUiSession(request: Request): Promise<Actor> {
+  const viewer = await requireViewer(request);
   const jar = parseCookies(request.headers.get("cookie"));
   const sessionId = jar[SESSION_COOKIE];
   if (!sessionId) throw new ApiError(401, "no_session", "Your demo session has expired. Reload the page.");
@@ -72,5 +108,12 @@ export async function requireUiSession(request: Request): Promise<Actor> {
     }
   }
   const persona = await resolvePersona(jar[PERSONA_COOKIE]);
-  return { type: "user", id: persona.id, name: persona.name, sessionId };
+  return { type: "user", id: persona.id, name: persona.name, sessionId, viewer };
+}
+
+/** Revealing or rotating credentials is limited to the app owner or, for team apps, team admins. */
+export function requireCredentialManager(actor: Actor) {
+  if (!actor.viewer.canManageCredentials) {
+    throw new ApiError(403, "forbidden", "Only the app owner or a team admin can view or rotate integration credentials.");
+  }
 }
