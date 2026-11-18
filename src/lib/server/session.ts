@@ -1,0 +1,76 @@
+import "server-only";
+import { cookies } from "next/headers";
+import { CSRF_COOKIE, CSRF_HEADER, DEFAULT_PERSONA_ID, PERSONA_COOKIE, SESSION_COOKIE } from "@/lib/session-constants";
+import { sql } from "./db";
+import { ApiError } from "./http";
+
+export interface Persona {
+  id: string;
+  name: string;
+  role: string;
+  team: string;
+  email: string;
+}
+
+export interface Actor {
+  type: "user";
+  id: string;
+  name: string;
+  sessionId: string;
+}
+
+export async function listPersonas(): Promise<Persona[]> {
+  return sql<Persona>("select id, name, role, team, email from team_members where is_demo_persona order by id");
+}
+
+async function resolvePersona(id: string | undefined): Promise<Persona> {
+  const personas = await listPersonas();
+  const persona = personas.find((p) => p.id === id) ?? personas.find((p) => p.id === DEFAULT_PERSONA_ID) ?? personas[0];
+  if (!persona) throw new ApiError(500, "no_personas", "Demo personas are not seeded. Reset the demo data.");
+  return persona;
+}
+
+/** For server components: the demo session established by src/proxy.ts. */
+export async function getDemoSession() {
+  const jar = await cookies();
+  const persona = await resolvePersona(jar.get(PERSONA_COOKIE)?.value);
+  return { sessionId: jar.get(SESSION_COOKIE)?.value ?? "pending", persona };
+}
+
+function parseCookies(header: string | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const part of (header ?? "").split(";")) {
+    const index = part.indexOf("=");
+    if (index < 0) continue;
+    out[part.slice(0, index).trim()] = decodeURIComponent(part.slice(index + 1).trim());
+  }
+  return out;
+}
+
+/**
+ * Guards state-changing UI endpoints: requires the demo session cookie, a same-origin request,
+ * and a double-submit CSRF token (header must equal the cpi_csrf cookie).
+ */
+export async function requireUiSession(request: Request): Promise<Actor> {
+  const jar = parseCookies(request.headers.get("cookie"));
+  const sessionId = jar[SESSION_COOKIE];
+  if (!sessionId) throw new ApiError(401, "no_session", "Your demo session has expired. Reload the page.");
+
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    const origin = request.headers.get("origin");
+    const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host");
+    if (origin && host && new URL(origin).host !== host) {
+      throw new ApiError(403, "cross_origin", "Cross-origin requests are not allowed.");
+    }
+    const fetchSite = request.headers.get("sec-fetch-site");
+    if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
+      throw new ApiError(403, "cross_origin", "Cross-site requests are not allowed.");
+    }
+    const csrf = request.headers.get(CSRF_HEADER);
+    if (!csrf || !jar[CSRF_COOKIE] || csrf !== jar[CSRF_COOKIE]) {
+      throw new ApiError(403, "csrf_failed", "The request could not be verified. Reload the page and try again.");
+    }
+  }
+  const persona = await resolvePersona(jar[PERSONA_COOKIE]);
+  return { type: "user", id: persona.id, name: persona.name, sessionId };
+}
