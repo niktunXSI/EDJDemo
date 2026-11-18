@@ -45,11 +45,16 @@ export async function apiFetch<T>(path: string, options: { method?: string; body
   const data = text ? JSON.parse(text) : null;
   if (!response.ok) {
     const error = data?.error ?? {};
+    const fields: FieldError[] = error.details?.fields ?? [];
+    const message =
+      error.code === "validation_failed" && fields.length
+        ? fields.map((f) => f.message).join(" ")
+        : (error.message ?? `Request failed with status ${response.status}.`);
     throw new ApiClientError(
-      error.message ?? `Request failed with status ${response.status}.`,
+      message,
       response.status,
       error.code ?? "unknown_error",
-      error.details?.fields ?? [],
+      fields,
       error.details,
     );
   }

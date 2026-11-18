@@ -6,6 +6,7 @@ import { dispatchDue, getDelivery, retryDelivery } from "@/lib/server/webhooks/d
 import { computeSignature, signatureHeaders, verifySignature } from "@/lib/server/webhooks/signing";
 import { listMockEvents } from "@/lib/server/webhooks/mock-receiver";
 import { assertSafeDestination, isPrivateAddress } from "@/lib/server/webhooks/destination";
+import { settingsSchema } from "@/lib/validation";
 import { makeDueNow, resetDatabase, startReceiver, USER } from "./support/helpers";
 
 const BASE = { baseUrl: "http://localhost:4317" };
@@ -190,5 +191,23 @@ describe("webhook destination guard", () => {
 
   it("always rejects cloud metadata endpoints", async () => {
     await expect(assertSafeDestination("http://169.254.169.254/latest", { allowPrivate: true })).rejects.toMatchObject({ code: "invalid_webhook_url" });
+  });
+});
+
+describe("integration settings validation", () => {
+  it("accepts pasted tokens with a Bearer prefix, long tokens, and long URLs", () => {
+    const long = "k".repeat(3000);
+    const parsed = settingsSchema.parse({
+      url: `https://api2.example.com/automations/webhook/${"a".repeat(600)}`,
+      bearerToken: `  Bearer ${long}\n`,
+    });
+    expect(parsed.bearerToken).toBe(long);
+    expect(settingsSchema.parse({ bearerToken: "" }).bearerToken).toBe("");
+  });
+
+  it("explains invalid tokens", () => {
+    const result = settingsSchema.safeParse({ bearerToken: "two words here" });
+    expect(result.success).toBe(false);
+    expect(result.error!.issues[0].path).toEqual(["bearerToken"]);
   });
 });

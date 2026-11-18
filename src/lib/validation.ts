@@ -163,7 +163,7 @@ export const settingsSchema = z
     url: z
       .string()
       .trim()
-      .max(500)
+      .max(2048, "Webhook URLs must be 2,048 characters or fewer.")
       .refine((v) => v === "" || /^https?:\/\//i.test(v), "Webhook URLs must start with https:// (or http:// for localhost).")
       .optional(),
     secret: z
@@ -174,10 +174,14 @@ export const settingsSchema = z
       .optional(),
     bearerToken: z
       .string()
-      .trim()
-      .max(500)
-      .refine((v) => v === "" || v.length >= 8, "Destination tokens must be at least 8 characters.")
-      .refine((v) => !/\s/.test(v), "Destination tokens cannot contain spaces.")
+      .transform((v) => v.trim().replace(/^bearer\s+/i, "").trim())
+      .pipe(
+        z
+          .string()
+          .max(8192, "Destination tokens must be 8,192 characters or fewer.")
+          .refine((v) => v === "" || v.length >= 8, "Destination tokens must be at least 8 characters.")
+          .refine((v) => !/\s/.test(v), "Paste only the token itself; it cannot contain spaces or line breaks."),
+      )
       .optional(),
     autoQueue: z.boolean().optional(),
     includeClientIdentity: z.boolean().optional(),

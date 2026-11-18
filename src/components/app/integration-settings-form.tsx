@@ -59,6 +59,7 @@ export function IntegrationSettingsForm({
   const [bearer, setBearer] = useState("");
   const [clearBearer, setClearBearer] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [bearerError, setBearerError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [dispatching, setDispatching] = useState(false);
@@ -81,6 +82,7 @@ export function IntegrationSettingsForm({
   async function save() {
     setSaving(true);
     setUrlError(null);
+    setBearerError(null);
     try {
       const body: Record<string, unknown> = {
         enabled,
@@ -99,6 +101,10 @@ export function IntegrationSettingsForm({
     } catch (error) {
       if (error instanceof ApiClientError && (error.code.includes("url") || error.fields.some((f) => f.path === "url"))) {
         setUrlError(error.fields.find((f) => f.path === "url")?.message ?? error.message);
+      }
+      if (error instanceof ApiClientError) {
+        const field = error.fields.find((f) => f.path === "bearerToken");
+        if (field) setBearerError(field.message);
       }
       toast.error(errorMessage(error));
     } finally {
@@ -242,7 +248,8 @@ export function IntegrationSettingsForm({
               type="password"
               autoComplete="off"
               value={bearer}
-              onChange={(e) => (setBearer(e.target.value), setClearBearer(false))}
+              onChange={(e) => (setBearer(e.target.value), setClearBearer(false), setBearerError(null))}
+              aria-invalid={Boolean(bearerError)}
               placeholder={settings.maskedBearer ? `Current: ${settings.maskedBearer} (type to replace)` : "Paste the token your webhook endpoint requires"}
               className="min-w-0 flex-1 font-mono text-[13px]"
             />
@@ -253,8 +260,9 @@ export function IntegrationSettingsForm({
             )}
           </div>
         )}
+        {bearerError && <p className="text-[12px] font-medium text-[#9b1c13]">{bearerError}</p>}
         <p className="text-[12px] leading-relaxed text-muted-foreground">
-          Sent as <code className="font-mono">Authorization: Bearer …</code> to external destinations that require their own key, such as an
+          Paste just the key (a leading &ldquo;Bearer&rdquo; is removed automatically). Sent as <code className="font-mono">Authorization: Bearer …</code> to external destinations that require their own key, such as an
           automation webhook trigger. Stored server-side and never shown again.
         </p>
       </div>
