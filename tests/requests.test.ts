@@ -83,6 +83,28 @@ describe("request creation and validation", () => {
     expect(error.details.fields[0].path).toBe("title");
   });
 
+  it("accepts same-origin requests behind a proxy and rejects cross-site ones", async () => {
+    const withHeaders = (extra: Record<string, string>, drop: string[] = []) => {
+      const base = uiRequest("/api/requests", { body: valid });
+      const headers = new Headers(base.headers);
+      drop.forEach((h) => headers.delete(h));
+      Object.entries(extra).forEach(([k, v]) => headers.set(k, v));
+      return new Request(base.url, { method: "POST", headers, body: JSON.stringify(valid) });
+    };
+    const proxied = await createRoute(
+      withHeaders({ host: "internal-runtime.example.net", origin: "https://client-product-insights.apps.example.com", "sec-fetch-site": "same-origin" }),
+    );
+    expect(proxied.status).toBe(201);
+    const crossSite = await createRoute(withHeaders({ origin: "https://evil.example", "sec-fetch-site": "cross-site" }));
+    expect(crossSite.status).toBe(403);
+    const legacyMismatch = await createRoute(withHeaders({ origin: "https://evil.example" }));
+    expect(legacyMismatch.status).toBe(403);
+    const forwarded = await createRoute(
+      withHeaders({ host: "internal-runtime.example.net", "x-forwarded-host": "insights.example.com", origin: "https://insights.example.com" }),
+    );
+    expect(forwarded.status).toBe(201);
+  });
+
   it("rejects references to unknown advisors", async () => {
     const res = await createRoute(uiRequest("/api/requests", { body: { ...valid, advisorId: "ADV-999" } }));
     expect(res.status).toBe(422);

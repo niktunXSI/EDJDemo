@@ -104,15 +104,7 @@ export async function requireUiSession(request: Request): Promise<Actor> {
   if (!sessionId) throw new ApiError(401, "no_session", "Your demo session has expired. Reload the page.");
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    const origin = request.headers.get("origin");
-    const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ?? request.headers.get("host");
-    if (origin && host && new URL(origin).host !== host) {
-      throw new ApiError(403, "cross_origin", "Cross-origin requests are not allowed.");
-    }
-    const fetchSite = request.headers.get("sec-fetch-site");
-    if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") {
-      throw new ApiError(403, "cross_origin", "Cross-site requests are not allowed.");
-    }
+    assertSameOrigin(request);
     const csrf = request.headers.get(CSRF_HEADER);
     if (!csrf || !jar[CSRF_COOKIE] || csrf !== jar[CSRF_COOKIE]) {
       throw new ApiError(403, "csrf_failed", "The request could not be verified. Reload the page and try again.");
@@ -120,6 +112,39 @@ export async function requireUiSession(request: Request): Promise<Actor> {
   }
   const persona = await resolvePersona(jar[PERSONA_COOKIE]);
   return { type: "user", id: persona.id, name: persona.name, sessionId, viewer };
+}
+
+/**
+ * Rejects cross-site state changes. Modern browsers send Sec-Fetch-Site, which page scripts cannot
+ * set and proxies do not rewrite, so it is checked first. Behind a hosting proxy the Host header can
+ * differ from the address in the browser, so the Origin fallback accepts any forwarded host name.
+ */
+export function assertSameOrigin(request: Request) {
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite) {
+    if (fetchSite !== "same-origin" && fetchSite !== "none") {
+      throw new ApiError(403, "cross_origin", "Cross-site requests are not allowed.");
+    }
+    return;
+  }
+  const origin = request.headers.get("origin");
+  if (!origin) return;
+  const allowed = new Set<string>();
+  for (const name of ["host", "x-forwarded-host", "x-original-host"]) {
+    for (const value of request.headers.get(name)?.split(",") ?? []) {
+      if (value.trim()) allowed.add(value.trim().toLowerCase());
+    }
+  }
+  if (config.appBaseUrl) allowed.add(new URL(config.appBaseUrl).host.toLowerCase());
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host.toLowerCase();
+  } catch {
+    throw new ApiError(403, "cross_origin", "Cross-origin requests are not allowed.");
+  }
+  if (!allowed.has(originHost)) {
+    throw new ApiError(403, "cross_origin", "Cross-origin requests are not allowed.");
+  }
 }
 
 export function requireAdmin(actor: Actor) {
