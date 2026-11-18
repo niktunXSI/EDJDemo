@@ -81,7 +81,7 @@ Each pass also returns expired automation leases to the queue.
 
 ## GitHub issues automation
 
-A ready-to-use Cursor automation turns every new request into a structured GitHub issue in [niktunXSI/EDJ-Application](https://github.com/niktunXSI/EDJ-Application) and links it back to the request. Setup, secrets, and the agent prompt are in [docs/AUTOMATION.md](./docs/AUTOMATION.md); the agent's helper is [`automation/cpi-github.mjs`](./automation/cpi-github.mjs) and its prompt is [`automation/PROMPT.md`](./automation/PROMPT.md).
+A ready-to-use Cursor automation turns every new request into a structured GitHub issue in a repository you choose and links it back to the request. Issues carry only product context (no verbatim client feedback, names, or internal links), and public repositories require an explicit opt-in. Setup, secrets, and the agent prompt are in [docs/AUTOMATION.md](./docs/AUTOMATION.md); the agent's helper is [`automation/cpi-github.mjs`](./automation/cpi-github.mjs) and its prompt is [`automation/PROMPT.md`](./automation/PROMPT.md).
 
 ## Connecting an external automation workflow
 

@@ -7,7 +7,13 @@
 //   CPI_API_KEY       Agent API key (sent as X-API-Key)
 //   CURSOR_APP_TOKEN  Optional. Cursor API key for apps hosted behind Cursor sign-in (sent as x-cursor-app-token)
 //   GITHUB_TOKEN      Token with Issues read/write on GITHUB_REPO
-//   GITHUB_REPO       owner/name, default niktunXSI/EDJ-Application
+//   GITHUB_REPO       owner/name of the issue repository (required; no default)
+//   ALLOW_PUBLIC_ISSUES  Set to "true" only when publishing synthetic demo data to a PUBLIC repository.
+//                     By default the helper refuses to create issues in public repositories.
+//
+// Privacy: issue drafts never include the client's verbatim feedback, client or household
+// identity, advisor names, or links into the internal app. Only the product problem, the requested
+// change, impact, and broad context (product area, channel, priority, client segment) are used.
 //   CPI_WORKER_ID     Optional worker name, default cursor-automation
 //
 // Commands:
@@ -113,7 +119,19 @@ async function github(method, path, body) {
   return { status: response.status, data: text ? JSON.parse(text) : null };
 }
 
-const repo = () => env("GITHUB_REPO", "niktunXSI/EDJ-Application");
+const repo = () => env("GITHUB_REPO");
+
+async function assertRepositoryAllowed() {
+  const res = await github("GET", `/repos/${repo()}`);
+  if (res.status !== 200) fail(`Could not read repository ${repo()} (HTTP ${res.status}).`, { github: res.data?.message });
+  if (res.data.private !== true && process.env.ALLOW_PUBLIC_ISSUES !== "true") {
+    fail(
+      `Refusing to publish to ${repo()} because it is public. Make the repository private, or set ALLOW_PUBLIC_ISSUES=true only for synthetic demo data.`,
+      { public: true },
+    );
+  }
+  return { isPublic: res.data.private !== true };
+}
 const marker = (id) => `<!-- cpi-request: ${id} -->`;
 const revisionMarker = (id, revision) => `<!-- cpi-revision: ${id} r${revision} -->`;
 
@@ -153,25 +171,22 @@ function renderDraft(detail) {
   const r = detail.request;
   const c = r.content;
   const ctx = r.clientContext;
-  const quote = (text) => text.split("\n").map((line) => `> ${line}`).join("\n");
   const section = (title, text, empty) => `## ${title}\n\n${text?.trim() ? text.trim() : `_${empty}_`}\n`;
-  const related = r.relatedRequests.length ? r.relatedRequests.map((x) => `${x.id} (${x.title})`).join("; ") : "None";
   return [
     `## Summary\n\n${c.problemStatement?.trim() || c.requestedOutcome}\n`,
-    `## Client feedback (as relayed by the advisor)\n\n${quote(c.originalFeedback)}\n`,
-    section("Problem", c.problemStatement, "Not provided"),
+    section("Problem", c.problemStatement, "Describe the product problem in your own words, without client details."),
     section("Proposed change", c.requestedOutcome, "Not provided"),
     section("Current workaround", c.currentWorkaround, "None recorded"),
     section("Business impact", c.businessImpact, "Not provided"),
     section("Expected benefit", c.expectedBenefit, "Not provided"),
-    `## Acceptance criteria\n\n- [ ] The proposed change is available in the ${r.channel.label.toLowerCase()} channel for ${r.productArea.label}.\n- [ ] The current workaround is no longer needed.\n- [ ] Accessibility (WCAG 2.1 AA) and analytics are covered.\n`,
-    `## Context\n\n| Field | Value |\n| --- | --- |\n| Request | ${r.id} (revision ${r.revision}) |\n| Product area | ${r.productArea.label} |\n| Channel | ${r.channel.label} |\n| Type | ${r.type.label} |\n| Priority | ${r.priority.label} |\n| Business status | ${r.businessStatus.label} |\n| Submitted by | ${r.submittedBy.name}, ${r.submittedBy.branch} (${r.submittedBy.region}) |\n| Client segment | ${ctx ? `${ctx.segment}, ${ctx.region}, ${ctx.relationshipTenureYears}-year relationship` : "Advisor-originated"} |\n| Related requests | ${related} |\n| Tags | ${r.tags.length ? r.tags.join(", ") : "None"} |\n`,
+    `## Acceptance criteria\n\n- [ ] The proposed change is available in the ${r.channel.label.toLowerCase()} channel for ${r.productArea.label}.\n- [ ] The current workaround is no longer needed.\n`,
+    `## Context\n\n| Field | Value |\n| --- | --- |\n| Request | ${r.id} (revision ${r.revision}) |\n| Product area | ${r.productArea.label} |\n| Channel | ${r.channel.label} |\n| Type | ${r.type.label} |\n| Priority | ${r.priority.label} |\n| Client segment | ${ctx ? ctx.segment : "Advisor-originated"} |\n| Related requests | ${r.relatedRequests.length ? r.relatedRequests.map((x) => x.id).join(", ") : "None"} |\n`,
   ].join("\n");
 }
 
 function footer(detail) {
   const r = detail.request;
-  return `\n---\n<sub>Created by the Client Product Insights automation from ${r.id} revision ${r.revision}. Source: ${detail.links.detailUrl}</sub>\n\n${marker(r.id)}\n${revisionMarker(r.id, r.revision)}\n`;
+  return `\n---\n<sub>Created by the Client Product Insights automation from ${r.id} revision ${r.revision}.</sub>\n\n${marker(r.id)}\n${revisionMarker(r.id, r.revision)}\n`;
 }
 
 async function getDetail(requestId) {
@@ -237,6 +252,7 @@ async function main() {
 
     if (opts["dry-run"]) return print({ status: "dry-run", repo: repo(), title, labels, body });
 
+    await assertRepositoryAllowed();
     await ensureLabels(labels);
     let issue = await findExistingIssue(detail.request.id);
     let created = false;

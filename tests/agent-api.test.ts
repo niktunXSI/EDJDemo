@@ -106,7 +106,7 @@ describe("agent API processing flow", () => {
     const ref = await referenceRoute(
       agentRequest("/api/v1/requests/CPI-1006/external-reference", apiKey, {
         method: "PUT",
-        body: { claimToken: claim.data.claimToken, issueKey: "niktunXSI/EDJ-Application#12", issueUrl: "https://github.com/niktunXSI/EDJ-Application/issues/12", system: "github" },
+        body: { claimToken: claim.data.claimToken, issueKey: "example-org/product-backlog#12", issueUrl: "https://github.com/example-org/product-backlog/issues/12", system: "github" },
       }),
       params("CPI-1006"),
     );
