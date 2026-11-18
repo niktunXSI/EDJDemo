@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { AlertTriangle, CheckCircle2, CircleSlash, FlaskConical, Globe, KeyRound, ShieldCheck } from "lucide-react";
+import { AutoDispatch } from "@/components/app/auto-dispatch";
 import { MockTag } from "@/components/app/badges";
 import { CodeBlock } from "@/components/app/code-block";
 import { CredentialField } from "@/components/app/credential-field";
@@ -57,6 +58,7 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 
   return (
     <>
+      <AutoDispatch active={stats.pending > 0} />
       <PageHeader
         title="Integrations"
         description="The boundary between Client Product Insights and external automation. Queued requests are announced by a signed outbound webhook and processed through the authenticated Agent API. This application never creates issues in Jira or any other tracker."

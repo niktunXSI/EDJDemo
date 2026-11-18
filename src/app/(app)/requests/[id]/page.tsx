@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, ArrowUpRight, Building2, ExternalLink, Info, Mail, UsersRound } from "lucide-react";
 import { ActivityFeed } from "@/components/app/activity-feed";
+import { AutoDispatch } from "@/components/app/auto-dispatch";
 import {
   AutomationBadge,
   DeliveryStatusBadge,
@@ -77,6 +78,7 @@ export default async function RequestDetailPage({ params }: { params: Promise<{ 
 
   return (
     <>
+      <AutoDispatch active={latestDelivery?.status === "pending" || latestDelivery?.status === "sending" || request.automationStatus === "processing"} />
       <PageHeader
         breadcrumbs={[{ label: "Overview", href: "/" }, { label: "Request queue", href: "/requests" }, { label: request.id }]}
         eyebrow={

@@ -43,7 +43,14 @@ async function createBackend(): Promise<Backend> {
     const pool = new pg.Pool({ connectionString: url, max: Number(process.env.DATABASE_POOL_MAX ?? 5) });
     return { kind: "postgres", pool };
   }
-  const dataDir = process.env.PGLITE_DATA_DIR?.trim() || ".data/pglite";
+  const configuredDir = process.env.PGLITE_DATA_DIR?.trim();
+  if (process.env.NODE_ENV === "production" && !configuredDir && process.env.NEXT_PHASE !== "phase-production-build") {
+    throw new Error(
+      "DATABASE_URL is not set. Production deployments must use PostgreSQL (set DATABASE_URL). " +
+        "To run the embedded database in production anyway, set PGLITE_DATA_DIR to a persistent volume path.",
+    );
+  }
+  const dataDir = configuredDir || ".data/pglite";
   const parsers = { [INT8]: (v: string) => Number(v), [NUMERIC]: (v: string) => Number(v) };
   if (dataDir === "memory") {
     return { kind: "pglite", db: new PGlite({ parsers }) };

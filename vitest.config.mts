@@ -1,6 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
+const testDatabaseUrl = process.env.TEST_DATABASE_URL ?? "";
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -12,11 +14,13 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     pool: "forks",
+    // A shared PostgreSQL database cannot be reset by several files at once.
+    fileParallelism: testDatabaseUrl === "",
     testTimeout: 30000,
     hookTimeout: 60000,
     env: {
       PGLITE_DATA_DIR: "memory",
-      DATABASE_URL: "",
+      DATABASE_URL: testDatabaseUrl,
       DEMO_MODE: "true",
       DELIVERY_WORKER_INLINE: "false",
       WEBHOOK_TIMEOUT_MS: "2000",
