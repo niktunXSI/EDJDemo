@@ -76,6 +76,10 @@ If your team restricts Cloud Agent network access, allow the app's host and `api
 2. Submit a new request. It shows **Queued**, the webhook delivers, and within a minute or two the request shows **Processing**, then **Completed** with an `owner/repo#N` link.
 3. In the issue repository, the issue carries the labels `client-request`, `priority: …`, `area: …`, and `type: …`.
 
+## Checking the setup
+
+`node automation/cpi-github.mjs doctor` is read-only. It reports whether every secret is set, whether the app's Agent API is reachable through the sign-in gate, and whether the GitHub repository is reachable, writable, and allowed (public repositories need `ALLOW_PUBLIC_ISSUES=true`).
+
 ## Running the helper manually
 
 ```bash

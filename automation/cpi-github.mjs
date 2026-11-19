@@ -17,6 +17,7 @@
 //   CPI_WORKER_ID     Optional worker name, default cursor-automation
 //
 // Commands:
+//   doctor                                             Read-only check of every connection and credential
 //   claim   [--request CPI-1033]                       Claim a specific request, or the oldest queued one
 //   draft   --request CPI-1033                         Render a structured issue draft (markdown) for review/editing
 //   heartbeat --request ID --claim-token T --message M Report progress and extend the lease
@@ -209,6 +210,53 @@ async function main() {
   const opts = args(rest);
   const worker = process.env.CPI_WORKER_ID?.trim() || "cursor-automation";
 
+  if (command === "doctor") {
+    const checks = [];
+    const add = (name, ok, detail) => checks.push({ check: name, ok, detail });
+    for (const name of ["CPI_BASE_URL", "CPI_API_KEY", "GITHUB_TOKEN", "GITHUB_REPO"]) {
+      add(`${name} is set`, Boolean(process.env[name]?.trim()), process.env[name]?.trim() ? "set" : "missing");
+    }
+    add("CURSOR_APP_TOKEN is set", Boolean(process.env.CURSOR_APP_TOKEN), process.env.CURSOR_APP_TOKEN ? "set" : "missing (needed only for apps behind Cursor sign-in)");
+    if (process.env.CPI_BASE_URL && process.env.CPI_API_KEY) {
+      try {
+        const base = process.env.CPI_BASE_URL.replace(/\/+$/, "");
+        const headers = { "x-api-key": process.env.CPI_API_KEY };
+        if (process.env.CURSOR_APP_TOKEN) headers["x-cursor-app-token"] = process.env.CURSOR_APP_TOKEN;
+        const res = await fetch(`${base}/api/v1/requests?pageSize=1`, { headers, redirect: "manual", signal: AbortSignal.timeout(20_000) });
+        const text = await res.text();
+        let data = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+        if (res.status === 200) add("Client Product Insights Agent API", true, `reachable; ${data?.pagination?.total ?? "?"} requests`);
+        else if (res.status >= 300 && res.status < 400) add("Client Product Insights Agent API", false, "redirected to Cursor sign-in: CURSOR_APP_TOKEN is missing, invalid, or not allowed to open this app");
+        else if (typeof data?.error === "string") add("Client Product Insights Agent API", false, `Cursor sign-in gate refused (HTTP ${res.status}: ${data.error})`);
+        else add("Client Product Insights Agent API", false, `HTTP ${res.status}: ${data?.error?.code ?? "unexpected response"}`);
+      } catch (error) {
+        add("Client Product Insights Agent API", false, error instanceof Error ? error.message : String(error));
+      }
+    }
+    if (process.env.GITHUB_TOKEN && process.env.GITHUB_REPO) {
+      const res = await github("GET", `/repos/${repo()}`);
+      if (res.status !== 200) add("GitHub repository access", false, `HTTP ${res.status}: ${res.data?.message ?? ""}`);
+      else {
+        add("GitHub repository access", true, `${repo()} (${res.data.private ? "private" : "public"})`);
+        add(
+          "Public repository opt-in",
+          res.data.private === true || process.env.ALLOW_PUBLIC_ISSUES === "true",
+          res.data.private ? "not needed (private)" : process.env.ALLOW_PUBLIC_ISSUES === "true" ? "ALLOW_PUBLIC_ISSUES=true" : "set ALLOW_PUBLIC_ISSUES=true for synthetic demo data",
+        );
+        const perms = res.data.permissions;
+        if (perms) add("GitHub token can write", Boolean(perms.push || perms.triage || perms.maintain || perms.admin), JSON.stringify(perms));
+      }
+    }
+    const ok = checks.every((c) => c.ok);
+    console.log(JSON.stringify({ ok, checks }, null, 2));
+    process.exit(ok ? 0 : 1);
+  }
+
   if (command === "claim") {
     const body = { workerId: worker, leaseSeconds: 900 };
     const res = opts.request
@@ -314,7 +362,7 @@ async function main() {
     return print({ status: "failed-recorded" });
   }
 
-  fail("Usage: node automation/cpi-github.mjs <claim|draft|heartbeat|publish|fail> [options]");
+  fail("Usage: node automation/cpi-github.mjs <doctor|claim|draft|heartbeat|publish|fail> [options]");
 }
 
 main().catch((error) => fail(error instanceof Error ? error.message : String(error)));
